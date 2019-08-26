@@ -1,0 +1,212 @@
+NSD班级第二阶段测试
+考试注意
+1.不许使用终端测试
+2.不许翻看笔记
+3.做完之后改名文档，格式班级+姓名
+
+shell脚本 一题5分，结果正确5分，结果错误0分  35
+1.利用cat命令编写快速配置yum源仓库脚本，源为ftp://176.19.0.250/centos7
+cat > /etc/yum.repos.d/test.repo << EOF
+> [centos7]
+> name=centos7
+> baseurl=ftp://176.19.0.250/centos
+> enabled=1
+> gpgcheck=0
+> EOF
+
+2.编写快速配置ip的脚本，要求可选择配置eth0或者eth1
+#!/bin/bash
+read  -p  'Network name(eth0/eth1):'  name
+read  -p  'Set IP(IP):'  ip
+read  -p  'Set Netmask(default 24):'  nm
+read  -p  'Set Gateway(default none):'  gw
+network (){
+echo "TYPE=Ethernet
+BOOTPROTO=none
+DEFROUTE=yes
+IPV4_FAILURE_FATAL=no
+NAME=eth0
+DEVICE=eth0
+ONBOOT=yes
+IPADDR=${ip}
+PREFIX=${nm:-24}
+GATEWAY=${gw}" > /etc/sysconfig/network-scripts/ifcfg-${name}
+}
+case $name in
+   eth0)
+   network;;
+   eth1)
+   network;;
+   *)
+   echo -e "\e[31;1mNetwork Address Error\e[0m"
+esac
+
+3.编写简单的创建用户和密码脚本，要求密码输入时不显示
+#!/bin/bash
+read -p "Enter user: " name
+stty -echo
+read -p "Enter password: " password
+stty echo
+echo
+grep $name /etc/passwd &> /dev/null
+if [ $? -eq 0 ];then
+  echo "Enter another name. This has been occupied!"
+  exit 55
+else
+  useradd $name  &> /dev/null
+  echo $password | passwd --stdin $name &> /dev/null
+fi
+
+4.编写9x9乘法表
+#!/bin/bash
+for i in `seq 9`
+do
+  for j in `seq $i`
+  do
+    echo -n "$i*$j=$[i*j] "
+  done
+  echo
+done
+
+5.编写密码登陆错误5次，自动把访问ip添加入黑名单
+awk '/Failed password/{ip[$11]++}END{for(i in ip){if(ip[i]>4) print i}}' /var/log/secure
+
+6.统计13:30到14:30所有访问apache服务器的请求有多少个
+awk -F "[/:]" '$4":"$5>="13:30" && $4":"$5<="14:30"{print $1}' /var/log/httpd/access_log | awk '{print $1}'
+
+7.awk统计web访问排名
+awk '{ip[$1]++}END{for(i in ip)print i,ip[i]}' /var/log/httpd/access_log | sort -nr -k2 | head -5
+
+
+operation 一题5分        65
+
+1.nginx源码安装过程
+[root@proxy ~]# useradd -s /sbin/nologin  nginx
+[root@proxy ~]# tar -xvf nginx-1.12.2.tar.gz
+[root@proxy ~]# cd nginx-1.12.2
+[root@proxy nginx-1.12.2]# ./configure   \
+> --user=nginx   --group=nginx \
+> --with-http_ssl_module
+[root@proxy ~]# make && make install
+
+2.配置lnmp环境
+[root@proxy ~]# yum -y install   mariadb   mariadb-server   mariadb-devel
+[root@proxy ~]# yum -y  install  php   php-mysql
+[root@proxy ~]# yum -y  install php-fpm-5.4.16-42.el7.x86_64.rpm
+location  ~  \.php$  {
+            root           html;
+            fastcgi_pass   127.0.0.1:9000;    #将请求转发给本机9000端口，PHP解释器
+            fastcgi_index  index.php;
+            #fastcgi_param   SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+            include        fastcgi.conf;
+        }
+
+3.nginx优化有哪些
+
+
+
+4.nginx配置地址重写，访问a.html重定向到b.html
+server {
+        listen       80;
+        server_name  localhost;
+rewrite /a.html  /b.html;            
+location / {
+    root   html;
+index  index.html index.htm;
+}
+
+5.实现curl和火狐访问相同链接返回的页面不同
+if ($http_user_agent ~* firefox) {            //识别客户端firefox浏览器
+rewrite ^(.*)$ /firefox/$1;
+}
+
+6.nginx实现4.100和4.200服务器调度功能
+http {
+.. ..
+upstream webserver {
+                server 192.168.4.100:80;
+                server 192.168.4.200:80;
+        }
+.. ..
+server {
+        listen		80;
+        server_name  localhost;
+            location / {
+#通过proxy_pass将用户的请求转发给webserver集群
+            proxy_pass http://webserver;
+        }
+}
+
+7.第6题进化版，要求4.100的权重为1,4.200的权重为2，后台服务器的失败次数，以及超时时间30
+upstream webserver {
+				 ip_hash;
+                server 192.168.4.100 weight=1 max_fails=2 fail_timeout=30;
+                server 192.168.4.200 weight=2 max_fails=2 fail_timeout=30;
+        }
+
+8.使用nginx实现TCP/UDP调度功能，实现后端ssh服务器两台，采用轮训的方式调用后端ssh服务器
+[root@proxy nginx-1.12.2]# ./configure   \
+> --with-http_ssl_module						        //开启SSL加密功能
+> --with-stream								       //开启4层反向代理功能
+[root@proxy nginx-1.12.2]# make && make install	       //编译并安装
+stream {
+    		upstream backend {
+           	server 192.168.2.100:22;			//后端SSH服务器的IP和端口
+           	server 192.168.2.200:22;
+}
+   		 server {
+       		 listen 12345;					//Nginx监听的端口
+       		 proxy_connect_timeout 1s;
+       		 proxy_timeout 3s;
+        	 proxy_pass backend;
+			 }
+
+9.session与cookie区别
+cookie
+位于用户的计算机上，用来维护用户计算机中的信息，直到用户删除。比如我们在网页上登录某个软件时输入用户名及密码时如果保存为cookie，则每次我们访问的时候就不需要登录网站了。我们可以在浏览器上保存任何文本，而且我们还可以随时随地的去阻止它或者删除。我们同样也可以禁用或者编辑cookie，但是有一点需要注意不要使用cookie来存储一些隐私数据，以防隐私泄露
+session
+session称为会话信息，位于web服务器上，主要负责访问者与网站之间的交互，当访问浏览器请求http地址时，将传递到web服务器上并与访问信息进行匹配， 当关闭网站时就表示会话已经结束，网站无法访问该信息了，所以它无法保存永久数据，我们无法访问以及禁用网站
+区别
+1、cookie数据存放在客户的浏览器上，session数据放在服务器上。
+2、cookie不是很安全，别人可以分析存放在本地的cookie并进行cookie欺骗，考虑到安全应当使用session。
+3、session会在一定时间内保存在服务器上。当访问增多，会比较占用你服务器的性能，考虑到减轻服务器性能方面，应当使用cookie。
+4、单个cookie保存的数据不能超过4K，很多浏览器都限制一个站点最多保存20个cookie。
+5、可以考虑将登陆信息等重要信息存放为session，其他信息如果需要保留，可以放在cookie中。
+
+10.tomcat3个端口干什么的？
+8005
+<Server port="8005" shutdown="SHUTDOWN">
+关闭tomcat通信接口
+
+8009
+<Connector port="8009" protocol="AJP/1.3" redirectPort="8443"/>
+与其他http服务器通信接口，用于http服务器集合
+
+8080
+<Connector connectionTimeout="20000" port="8080" protocol="HTTP/1.1" redirectPort="8443"/>
+建立http连接 用，如浏览器访问
+
+11.配置Tomcat支持ssl加密网站
+[root@web1 ~]# keytool -genkeypair -alias tomcat -keyalg RSA -keystore /usr/local/tomcat/keystore
+[root@web1 ~]# vim /usr/local/tomcat/conf/server.xml
+… …
+<Connector port="8443" protocol="org.apache.coyote.http11.Http11NioProtocol"
+maxThreads="150" SSLEnabled="true" scheme="https" secure="true"
+keystoreFile="/usr/local/tomcat/keystore" keystorePass="123456" clientAuth="false" sslProtocol="TLS" />
+
+12.使用varnish加速web
+
+13.git是做什么用的
+
+cluster 1题5分      30
+1.SCSI、DAS、NAS、SAN、FC分别代表什么存储
+
+2.LVS-DR的工作原理
+
+3.部署LVS-DR，调度器为192.168.4.5，vip为192.168.4.15，真实服务器为192.168.4.100,与4.200
+
+4.使用haproxy软件做调度，proxy服务器ip为192.168.4.5,192.168.2.5；web1为192.168.2.100，web2为192.168.2.200
+
+5.什么是分布式文件系统
+
+6.ceph有哪些组件，作用是什么
